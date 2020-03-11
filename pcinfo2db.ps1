@@ -25,8 +25,8 @@ function MailError
     $PSEmailServer = "ip or domain name"
     $Mail_HTMLBody = "<head><style>table {border-collapse: collapse; padding: 2px;}table, td, th {border: 1px solid #ffffff;}</style></head>"
     $Mail_HTMLBody += "<body style='background:#ffffff'><font face='Courier New'; size='2' color=#cc0000>"		
-    $Mail_Subject = "ArchDoc $Datestamp"
-    $Mail_HTMLBody += "<center><h2>ArchDoc Error Report</h2></center>"
+    $Mail_Subject = "PCInfo $Datestamp"
+    $Mail_HTMLBody += "<center><h2>PCInfo Error Report</h2></center>"
     $Mail_HTMLBody += $Mail_TextBody
     $Mail_HTMLBody += "</font></body>"
     Send-MailMessage -From "service account mail" -To "admin mail" -Subject $Mail_Subject -Body $Mail_HTMLBody -BodyAsHtml -Encoding UTF8
