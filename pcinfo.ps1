@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo (Client-side)
-    Version: 0.11 25.12.2019
+    Version: 0.12 09.09.2020
 
      © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -72,8 +72,9 @@ function SetArraytoString {
         $Clientname = "Local"
         $SessionName = "Local"
     }
-# Get information about Site PC
-    $SiteInfo = Get-WmiObject Win32_NTDomain | Where-object {$_.Description -eq "CONTOSO"}
+# Get information about Site PC and domain name
+    $DomainInfo = (Get-WmiObject Win32_ComputerSystem).Domain
+    $SiteInfo = Get-WmiObject Win32_NTDomain | Where-object {($_.Description -eq "CONTOSO") -or ($_.Description -eq "AnCONTOSO")}
 # Get information about motherboard
     $BoardInfo = Get-WmiObject Win32_Baseboard | Select-Object Manufacturer, Product
 # Get information about processor
@@ -90,7 +91,8 @@ function SetArraytoString {
     [array]$HardDiskInfo = Get-WmiObject Win32_DiskDrive | Where-Object {$_.InterfaceType -notmatch "USB"} | Select-Object @{Label = '"Model"'
     Expression =  {'"{0}"' -f $_.Model}}, @{Label = '"InterfaceType"' 
     Expression =  {'"{0}"' -f $_.InterfaceType}}, @{Label = '"SerialNumber"' 
-    Expression = { if ($_.SerialNumber) {'"{0}"' -f $_.SerialNumber } else { '"n/a"' } } }
+    Expression = { if ($_.SerialNumber) {'"{0}"' -f $_.SerialNumber } else { '"n/a"' } } }, @{Label = '"Status"'
+    Expression =  {'"{0}"' -f $_.Status}}
     $HardDiskCount = $HardDiskInfo.Count
 # Get information about Network Adapters
     [array]$NetworkAdapterInfo = Get-WmiObject Win32_NetworkAdapter | Where-Object {$_.NetConnectionStatus -gt "0"}
@@ -100,10 +102,11 @@ function SetArraytoString {
     Expression =  {'"{0}"' -f $_.DriverName}}, @{Label = '"Local"' 
     Expression =  {'"{0}"' -f $_.Local}}, @{Label = '"Default"'
     Expression =  {'"{0}"' -f $_.Default}}, @{Label = '"PortName"'
-    Expression = {'"{0}"' -f $_.PortName.Replace("\","/")}}
+    Expression = {'"{0}"' -f $_.PortName.Replace("\","/")}}, @{Label = '"Status"' 
+    Expression =  {'"{0}"' -f $_.Status}}
 # Get information about Operating System
     $OSInfo = Get-WmiObject Win32_OperatingSystem | Select-Object Caption, InstallDate, OSArchitecture, Version, @{Label = "NumberOfProcesses"
-    Expression = { if ($_.NumberOfProcesses -gt 300) {"gt300"} else {"lt300"} } }
+    Expression = { if ($_.NumberOfProcesses -gt 75) {"gt75"} else {"lt75"} } }
 # Get information about logical disks
     [array]$DiskInfo = get-WmiObject win32_logicaldisk | Where-Object {$_.MediaType -eq "12"} | Select-Object @{Label = '"DeviceId"'  
     Expression = {'"{0}"' -f $_.DeviceId}}, @{Label = '"Size"' 
@@ -124,23 +127,18 @@ function SetArraytoString {
     Expression = {'"{0}"' -f $_.HotFixID}}, @{Label = '"InstalledOn"'
     Expression = {'"{0}"' -f $_.InstalledOn}}
 # Get information about personal user certs
-    $CertInfo = Get-ChildItem -path cert:\CurrentUser\My | Select-Object @{Label = "Expiring"
-    Expression = {$_.NotAfter.ToShortDateString()} }, @{Label = "Issuer"
-    Expression = {($_.Issuer.Split(",") | Where-Object {$_ -match "CN="}).Replace("CN=","").Replace('"',"")} }, @{Label = "SubjectSName"
-    Expression = {($_.Subject.Split(",") | Where-Object {$_ -match "SN="}).Replace("SN=","")} }, @{Label = "SubjectGName"
-    Expression = {($_.Subject.Split(",") | Where-Object {$_ -match "G="}).Replace("G=","")} }
+    $CertInfo = Get-ChildItem -path cert:\CurrentUser\My | Select-Object @{Label = '"Expiring"'
+    Expression = {'"{0}"' -f $_.NotAfter.ToShortDateString()} }, @{Label = '"Issuer"'
+    Expression = {'"{0}"' -f ($_.Issuer.Split(",") | Where-Object {$_ -match "CN="}).Replace("CN=","").Replace('"',"")} }, @{Label = '"SubjectSName"'
+    Expression = {'"{0}"' -f ($_.Subject.Split(",") | Where-Object {$_ -match "SN="}).Replace("SN=","")} }, @{Label = '"SubjectGName"'
+    Expression = {'"{0}"' -f ($_.Subject.Split(",") | Where-Object {$_ -match "G="}).Replace("G=","")} }
 <#
     Variable $CertInfo given value null if users don't have cert.
     This check is written as a result of which at a given value an array is created with null values falling into the final json
 #>
     if ($null -eq $CertInfo) {
-        $CertInfo = @{
-            Expiring = "0"
-            SubjectSName = "0"
-            Issuer = "0"
-            SubjectGName = "0"
+        $CertInfo = '"Certificates is not installed"'
         }
-    }
 # Generating json with the necessary information using here-strings
 $Basic = @"
 {
@@ -148,7 +146,7 @@ $Basic = @"
     "UserName" : "$env:username",
     "ClientName" : "$Clientname",
     "SessionName" : "$SessionName",
-    "DomainName" : "$env:USERDNSDOMAIN",
+    "DomainName" : "$DomainInfo",
     "SiteName"  :   "$($SiteInfo.ClientSiteName)",
     "GeneralHardwareInfo" :
     {
@@ -202,38 +200,39 @@ $Basic = @"
             $(SetJsonArray -ArrayName $MSUpdateInfo)
         ],
         "CertInfo": [
-            $(SetArraytoString -ArrayName $CertInfo.Expiring)
-        ],
-        "CertInfoIssuer": [
-            $(SetArraytoString -ArrayName $CertInfo.Issuer)
-        ],
-        "CertInfoSubjectSName": [
-            $(SetArraytoString -ArrayName $CertInfo.SubjectSName)
-        ],
-        "CertInfoSubjectGName": [
-            $(SetArraytoString -ArrayName $CertInfo.SubjectGName)
+            $(SetJsonArray -ArrayName $CertInfo)
         ]
     },
     "TriggerInfo":{
         "OSInfoNumberOfProcesses" : "$($OSInfo.NumberOfProcesses)"
-    }
+    },
+    "AddInfo":{
+        "ChassisType" : "$($ChassisTypeInfo.ChassisTypes)"
+        }
 }
 "@
-$MacAdr = $NetworkAdapterInfo | Where-Object  {$_.NetConnectionStatus -eq "2"}
-# Get mac address in another class if exist greater one active network adapter
 if ($MacAdr.Count -gt "1")
-{
-    $NetworkAdapter2 = Get-WmiObject -Class Win32_NetworkAdapterConfiguration -Filter IPEnabled=TRUE | Where-Object {$_.DnsDomain -eq "contoso.local"}
-    $MacAdr = $null
-    $MacAdr = $NetworkAdapter2 | Select-Object MACAddress
-}
-$MacAdr = $MacAdr.MACAddress.Replace(":","")
-$FileName = $Timestamp + "_" + $MacAdr + "_" + $env:COMPUTERNAME + $JsonFileExt
-$JSON = ".\$Filename"
-$Basic | Out-File $JSON
-$StopScript=Get-Date
-$TimeToExec=($StopScript-$StartScript).TotalMinutes
-LogWrite "$StopScript;$env:username;$env:COMPUTERNAME;$env:USERDNSDOMAIN;$Clientname;$TimeToExec min"
+    {
+        [array]$NetworkAdapter2 = Get-WmiObject -Class Win32_NetworkAdapterConfiguration -Filter IPEnabled=TRUE
+        $MacAdr = $null
+        $MacAdr = $NetworkAdapter2[0] | Select-Object MACAddress
+    }
+    $MacAdr = $MacAdr.MACAddress.Replace(":","")
+    $FileName = $Timestamp + "_" + $MacAdr + "_" + $env:COMPUTERNAME + $JsonFileExt
+    $JSON = "$Filename"
+    $JSONAN = "$Filename"
+    $StopScript=Get-Date
+    $TimeToExec=($StopScript-$StartScript).TotalMinutes
+# Проверяем домен для отправки логов
+    if ($DomainInfo -notmatch "ancontoso.local") {
+        $Basic | Out-File $JSON
+        LogWrite "$StopScript;$env:username;$env:COMPUTERNAME;$env:USERDNSDOMAIN;$Clientname;$TimeToExec min"
+    }
+    else {
+        $Logfile = ".\$Date.log"
+        LogWrite "$StopScript;$env:username;$env:COMPUTERNAME;$DomainInfo;$Clientname;$TimeToExec min"
+        $Basic | Out-File $JSONAN
+    }
 # Debug
 #$b = $Basic | ConvertFrom-Json
 #$b.OsInfo.MSUpdateInfo
