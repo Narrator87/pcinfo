@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo (Server-Side)
-    Version: 0.04 27.11.2019
+    Version: 0.05 17.09.2020
 
     © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -53,7 +53,9 @@ function MailError
     $FileName = ""
     $Timestamp = Get-Date -Format "yyyyMM"
     $JSONFolder = "\\path\to$\#Folder\"
+    $JSONAnFolder = "\\path\to$\#Folder\"
     $FinalFolder = $JSONFolder + $Timestamp
+    $Logfolder = $JSONFolder + "Login\"+ $Timestamp + ".csv"
     $RemovingFiles = $null
     $CntFiles = 0
     $CntFilesAll = 0
@@ -62,15 +64,17 @@ function MailError
     LogWrite "######## Start $StartScript ###################" 
 # Create folder for final files
     if (!(test-path -path $FinalFolder)) {new-item $FinalFolder -itemtype directory | Out-Null}
-    if (!(test-path -path $JSONFolder)) {
+    if (!((test-path -path $JSONFolder) -and (test-path -path $JSONAnFolder))) {
         LogWrite "Folder is unreachable"
         LogWrite "######## Stop $StopScript ###################" 
         $Mail_TextBody += "Folder is unreachable.</center>`n"
         MailError
         Stop-Transcript
         exit}
-    $Files = Get-ChildItem $JSONFolder | Where-Object {($_.Extension -eq ".json") -and (($_.CreationTime).Date -eq (Get-date).Date.AddDays(-1))}
-    $CntFiles = Get-ChildItem $JSONFolder | Where-Object {($_.Extension -eq ".log") -and (($_.CreationTime).Date -eq (Get-date).Date.AddDays(-1))} | Get-Content
+    $Files = Get-ChildItem $JSONFolder, $JSONAnFolder | Where-Object {($_.Extension -eq ".json") -and (($_.CreationTime).Date -eq (Get-date).Date.AddDays(-1))}
+    $CntFilesCONTOSO = Get-ChildItem $JSONFolder | Where-Object {($_.Extension -eq ".log") -and (($_.CreationTime).Date -eq (Get-date).Date.AddDays(-1))} | Get-Content
+    $CntFilesAnCONTOSO = Get-ChildItem $JSONAnFolder | Where-Object {($_.Extension -eq ".log") -and (($_.CreationTime).Date -eq (Get-date).Date.AddDays(-1))} | Get-Content
+    $CntFiles = $CntFilesCONTOSO + $CntFilesAnCONTOSO
 # Compare files with same content
     foreach ($File in $Files) {
         $CntFilesAll = $CntFilesAll + 1
@@ -111,7 +115,7 @@ function MailError
         Write-Host "$Badwrite PC's can't write output json"
         LogWrite "$Badwrite PC's can't write output json."
     }
-    $UniqFiles = Get-ChildItem $JSONFolder | Where-Object {($_.Extension -eq ".json") -and (($_.CreationTime).Date -eq (Get-date).Date.AddDays(-1))}
+    $UniqFiles = Get-ChildItem $JSONFolder, $JSONAnFolder | Where-Object {($_.Extension -eq ".json") -and (($_.CreationTime).Date -eq (Get-date).Date.AddDays(-1))}
     foreach ($File in $UniqFiles) {
         $CntFilesUniq = $CntFilesUniq + 1
         $FileName = $File.FullName
@@ -123,8 +127,51 @@ function MailError
         }
        $InfoJson = $InfoJsonCheck | ConvertFrom-Json -ErrorAction SilentlyContinue
 # Get info about PC from Active Directory
-    $ADCompGroup = Get-ADPrincipalGroupMembership (Get-ADComputer $InfoJson.ComputerName) | Select-Object name
-    $ADUserGroup = Get-ADPrincipalGroupMembership $InfoJson.UserName | Select-Object name
+        if ($InfoJson.DomainName -eq "ancontoso.local"){
+            $SearchBase = "DC=ancontoso,DC=local"
+            $DCServer = "dc.ancontoso.local"
+            $UserName = $InfoJson.UserName
+            $TestADUser = Get-ADUser -LDAPFilter "(sAMAccountName=$UserName)"
+        }
+        else {
+            $SearchBase = "DC=contoso,DC=local"
+            $DCServer = "dc.contoso.local"
+        }
+        if ($null -ne $TestADUser) {
+            $ADUserGroup = Get-ADPrincipalGroupMembership $InfoJson.UserName | Select-Object name
+        }
+        else {
+            $ADUserGroup = Get-ADPrincipalGroupMembership $InfoJson.UserName -Server $DCServer | Select-Object name
+        }
+        $ComputerName = $InfoJson.ComputerName
+        if ($null -ne $ComputerName){
+            $ADCompGroup = Get-ADPrincipalGroupMembership (Get-ADComputer -Filter {Name -eq $ComputerName} -SearchBase "$SearchBase" -Server "$DCServer") | Select-Object name 
+        }
+# Get total physical memory 
+        $TotalMemory = 0
+        $InfoJson.GeneralHardwareInfo.PhysicalMemoryInfo.Capacity | foreach-object {$TotalMemory += [int64]$_}
+# Get chassis type
+        if ($InfoJson.AddInfo.ChassisType -eq "8" -or $InfoJson.AddInfo.ChassisType -eq "9" -or $InfoJson.AddInfo.ChassisType -eq "10" -or $InfoJson.AddInfo.ChassisType -eq "11" -or $InfoJson.AddInfo.ChassisType -eq "12" -or $InfoJson.AddInfo.ChassisType -eq "14" -or $InfoJson.AddInfo.ChassisType -eq "18" -or $InfoJson.AddInfo.ChassisType -eq "21") {
+            $ChassisType = "Notebook"    
+        }
+        else {
+            $ChassisType = "Workstation"
+        }
+# Get current time
+        if ($FileName -notmatch $Timestamp) {
+            $CMOS = "CMOS checksum error"
+            $FileModName = $File.Name.Split("_")
+            $TrueTime = Get-Date -Format "yyyyMMddHHmm"
+            if ($null -eq $FileModName[3]) {
+                $File = $TrueTime + "_" + $FileModName[1] + "_" + $FileModName[2]
+            }
+        else {
+            $File = $TrueTime + "_" + $FileModName[1] + "_" + $FileModName[2] + "_" + $FileModName[3]
+        }
+        }
+        else {
+            $CMOS = "CMOS OK"
+        }
 $Basic = @"
 {
     "ComputerName" : "$($InfoJson.ComputerName)",
@@ -137,8 +184,10 @@ $Basic = @"
         $($InfoJson.GeneralHardwareInfo | ConvertTo-Json),
     "OSInfo":
         $($InfoJson.OSInfo | ConvertTo-Json),
-    "TriggerInfo":
-        $($InfoJson.TriggerInfo | ConvertTo-Json),
+    "TriggerInfo":{
+        "OSInfoNumberOfProcesses" : "$($InfoJson.TriggerInfo.OSInfoNumberOfProcesses)",
+        "CMOSStatus" : "$($CMOS)"
+        },
     "ADInfo":
     {
         "ADCompGroup" :  [
@@ -147,8 +196,11 @@ $Basic = @"
         "ADCompGroup" :  [
             $(SetArraytoString -ArrayName $($ADUserGroup.Name))
             ]
+    },
+    "AddInfo":{
+    "TotalMemory" : "$($TotalMemory / 1Gb)",
+    "ChassisType" : "$($ChassisType)"
     }
-
 }
 "@
     $AdvJSON = "$FinalFolder\$File"
@@ -167,6 +219,27 @@ $Basic = @"
         $Mail_TextBody += "Many files not processed.</center>`n"
         MailError
         }
+# Process log files
+    $LogFilesCONTOSO = Get-ChildItem $JSONFolder | Where-Object {($_.Extension -eq ".log") -and ($_.FullName -match $Timestamp)} | Get-Content
+    $LogFilesAnCONTOSO = Get-ChildItem $JSONAnFolder | Where-Object {($_.Extension -eq ".log") -and ($_.FullName -match $Timestamp)} | Get-Content
+    $LogFiles = $LogFilesCONTOSO + $LogFilesAnCONTOSO
+    $RemovingLogFiles = Get-ChildItem $JSONFolder, $JSONAnFolder | Where-Object {($_.Extension -eq ".log") -and ($_.FullName -match $Timestamp)}
+    $RemovingLogFolders = Get-ChildItem $JSONFolder, $JSONAnFolder | Where-Object {($_.Attributes -eq "Directory") -and ($_.Name -notmatch "Log") -and (($_.CreationTime).Date -lt (Get-date).Date.AddMonths(-3))}
+    Add-content $Logfolder -value $LogFiles
+    if ($null -ne $RemovingLogFiles) {
+        Remove-Item -Path $RemovingLogFiles.Fullname
+    }
+    if ($null -ne $RemovingLogFolders) {
+        Remove-Item -Path $RemovingLogFolders.Fullname -Recurse
+    }
+# Process log files with false time
+    $Falsefolder = $JSONFolder + "Login\falsedate" + ".csv"
+    $FalseTimeLogFiles = Get-ChildItem $JSONFolder, $JSONAnFolder | Where-Object {($_.Extension -eq ".log") -and ($_.FullName -notmatch $Timestamp) -and (($_.CreationTime).Date -ne (Get-date).Date.AddDays(-1))}
+    $ContentFalseTimeLogFiles = $FalseTimeLogFiles | Get-Content
+    Add-content $Falsefolder -value $ContentFalseTimeLogFiles
+    if ($null -ne $FalseTimeLogFiles) {
+        Remove-Item -Path $FalseTimeLogFiles.Fullname
+    }
     $StopScript=Get-Date
     Stop-Transcript
     LogWrite "######## Stop $StopScript ###################"

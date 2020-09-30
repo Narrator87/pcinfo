@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo (Client-side)
-    Version: 0.12 09.09.2020
+    Version: 0.13 15.09.2020
 
      © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -127,7 +127,7 @@ function SetArraytoString {
     Expression = {'"{0}"' -f $_.HotFixID}}, @{Label = '"InstalledOn"'
     Expression = {'"{0}"' -f $_.InstalledOn}}
 # Get information about personal user certs
-    $CertInfo = Get-ChildItem -path cert:\CurrentUser\My | Select-Object @{Label = '"Expiring"'
+    $CertInfo = Get-ChildItem -path cert:\CurrentUser\My | Where-Object {$_.Subject -match "SN"} | Select-Object @{Label = '"Expiring"'
     Expression = {'"{0}"' -f $_.NotAfter.ToShortDateString()} }, @{Label = '"Issuer"'
     Expression = {'"{0}"' -f ($_.Issuer.Split(",") | Where-Object {$_ -match "CN="}).Replace("CN=","").Replace('"',"")} }, @{Label = '"SubjectSName"'
     Expression = {'"{0}"' -f ($_.Subject.Split(",") | Where-Object {$_ -match "SN="}).Replace("SN=","")} }, @{Label = '"SubjectGName"'
@@ -137,7 +137,7 @@ function SetArraytoString {
     This check is written as a result of which at a given value an array is created with null values falling into the final json
 #>
     if ($null -eq $CertInfo) {
-        $CertInfo = '"Certificates is not installed"'
+        $CertInfo = '{"Certificates" : "is not installed"}'
         }
 # Generating json with the necessary information using here-strings
 $Basic = @"
