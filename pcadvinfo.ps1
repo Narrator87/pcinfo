@@ -62,6 +62,9 @@ function MailError
     $CntFilesUniq = 0
     Start-Transcript -path  "$Infolog" -append
     LogWrite "######## Start $StartScript ###################" 
+    if ($StartScript.Day -eq "01") {
+        $Timestamp = $Timestamp - 1
+    }
 # Create folder for final files
     if (!(test-path -path $FinalFolder)) {new-item $FinalFolder -itemtype directory | Out-Null}
     if (!((test-path -path $JSONFolder) -and (test-path -path $JSONAnFolder))) {
