@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo2DB
-    Version: 0.01 22.11.2019
+    Version: 0.02 30.09.2020
 
     © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -51,7 +51,7 @@ function SelectData {
 function InsertData {
     try {
         $adDB = New-Object System.Data.Odbc.OdbcDataAdapter
-        $adDB.InsertCommand = New-Object System.Data.Odbc.OdbcCommand("insert into $tablename (last_login, macaddres, hostname, info) values ('$last_login', '$macaddres', '$hostname', '$info')", $Conn2DB)
+        $adDB.InsertCommand = New-Object System.Data.Odbc.OdbcCommand("insert into $tablename (last_login, macaddres, hostname, info, compare) values ('$last_login', '$macaddres', '$hostname', '$info', '$compare')", $Conn2DB)
         $adDB.InsertCommand.ExecuteNonQuery() | Out-Null
     }
     catch [System.Data.Odbc.OdbcException] {
@@ -61,7 +61,21 @@ function InsertData {
         $Global:ErrorMessage += "Problem with insert '$TargetFile' Error: '$_.Exception.ItemName' .</center>`n"
         LogWrite "Problem with insert '$TargetFile' Error: '$_.Exception.ItemName'"
     }
-    
+}
+# Функция удаления данных старше одного года в БД
+function DeleteOldData {
+    try {
+        $adDB = New-Object System.Data.Odbc.OdbcDataAdapter
+        $adDB.InsertCommand = New-Object System.Data.Odbc.OdbcCommand("delete from $tablename where last_login <= now()::date - interval '1 year'", $Conn2DB)
+        $adDB.InsertCommand.ExecuteNonQuery() | Out-Null
+    }
+    catch [System.Data.Odbc.OdbcException] {
+        $_.Exception
+        $_.Exception.Message
+        $_.Exception.ItemName
+        $Global:ErrorMessage += "Problem with insert '$TargetFile' Error: '$_.Exception.ItemName' .</center>`n"
+        LogWrite "Problem with insert '$TargetFile' Error: '$_.Exception.ItemName'"
+    }
 }
 # Declare Variables
     $Global:ErrorMessage = ""
@@ -119,15 +133,18 @@ if (!(test-path -path $JSONFolder)) {
         $SelectData = New-Object System.Data.DataSet
         SelectData    
 # Check for changes
-        if ($null -ne $SelectData.Tables.Rows){
-            $ReferenceObject = $null
-            $ReferenceObject = $info -join " "
-            $ResultCompare = Compare-Object -ReferenceObject $ReferenceObject -DifferenceObject $SelectData.Tables.Rows[3]
-                if ($null -ne $ResultCompare) {
+    if ($null -ne $SelectData.Tables.Rows){
+        $DifferenceObject = ($SelectData.Tables.Rows[3]) -split ','
+        $ReferenceObject = $null
+        $ReferenceObject = ($info -join " ")  -split ','
+        $ResultCompare = Compare-Object -ReferenceObject $ReferenceObject -DifferenceObject $DifferenceObject
+        $compareraw = $last_login + $ResultCompare.InputObject+ ",," + $SelectData.Tables.Rows[5]
+        $compare = $compareraw -split ',' | ConvertTo-Json
+            if ($null -ne $ResultCompare) {
                    InsertData
                    $TargetFile | Rename-Item  -NewName  {$_.Name -replace '.json','.done'} #-WhatIf
                 }
-                else {
+            else {
                     $TargetFile | Rename-Item  -NewName  {$_.Name -replace '.json','.done'} #-WhatIf
                 }
             }
@@ -136,6 +153,8 @@ if (!(test-path -path $JSONFolder)) {
                 $TargetFile | Rename-Item  -NewName  {$_.Name -replace '.json','.done'} #-WhatIf
                 }
         }
+# Delete strings older year from database
+    DeleteOldData
 # Close database connection
     $Conn2DB.Close()
 # Check the number of processed files
