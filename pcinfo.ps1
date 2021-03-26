@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo (Client-side)
-    Version: 0.13 15.09.2020
+    Version: 0.14 26.03.2021
 
      © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -61,6 +61,30 @@ function SetArraytoString {
     $FileName = ""
     $JsonFileExt = ".json"
     $Timestamp = Get-Date -Format "yyyyMMddHHmm"
+# Filter for excluding software printers by PortName
+    $Filter_PortName = @("pdf",
+                        "fax",
+                        "ts0",
+                        "wsd",
+                        "onenote",
+                        "document",
+                        "nul:",
+                        "snagit",
+                        "AD_Port",
+                        "BIPORT",
+                        "DOP7:",
+                        "FILE:",
+                        "FOXIT_Reader:",
+                        "FPR7:",
+                        "Journal Note Writer Port:",
+                        "MMSPORT:",
+                        "Nuance Image Printer Writer Port",
+                        "NVK7:",
+                        "NVO5:",
+                        "TS219",
+                        "XPSPort:",
+                        "PORTPROMPT:"
+    )    
 # Check rdp-session
     $RdpCheck = $null -ne $env:Clientname
     if ($RdpCheck -eq "True")
@@ -96,8 +120,8 @@ function SetArraytoString {
     $HardDiskCount = $HardDiskInfo.Count
 # Get information about Network Adapters
     [array]$NetworkAdapterInfo = Get-WmiObject Win32_NetworkAdapter | Where-Object {$_.NetConnectionStatus -gt "0"}
-# Get information about printers
-    [array]$PrinterInfo = Get-WmiObject win32_printer | Where-Object {$_.PortName -ne "PORTPROMPT:"} | Select-Object @{Label = '"Name"'  
+# Get information about physical printers
+    [array]$PrinterInfo = Get-WmiObject win32_printer | Where-Object  PortName -notmatch ($Filter_portname -Join "|") | Select-Object @{Label = '"Name"'  
     Expression = {'"{0}"' -f $_.Name.Replace("\","/")}}, @{Label = '"DriverName"' 
     Expression =  {'"{0}"' -f $_.DriverName}}, @{Label = '"Local"' 
     Expression =  {'"{0}"' -f $_.Local}}, @{Label = '"Default"'
