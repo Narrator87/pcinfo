@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo (Client-side)
-    Version: 0.14 26.03.2021
+    Version: 0.15 30.03.2021
 
      © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -128,7 +128,21 @@ function SetArraytoString {
     Expression =  {'"{0}"' -f $_.Default}}, @{Label = '"PortName"'
     Expression = {'"{0}"' -f $_.PortName.Replace("\","/")}}, @{Label = '"Status"' 
     Expression =  {'"{0}"' -f $_.Status}}
-# Get information about Operating System
+# Get information about connected by usb printers
+    $UsbPrintersInfo = Get-WmiObject Win32_USBControllerDevice | ForEach-Object {[wmi]($_.Dependent)} | Where-Object {$_.Service -match "print"} | Select-Object @{Label = '"Name"' 
+    Expression = { if ($_.Name) {'"{0}"' -f $_.Name } else { '"n/a"' } } }, @{Label = '"VID"'
+    Expression = { if ($_.DeviceId) {'"{0}"' -f  ($_.DeviceId.Split("\") -split ("&"))[1] } else { '"n/a"' } } },  @{Label = '"PID"'
+    Expression = { if ($_.DeviceId) {'"{0}"' -f  ($_.DeviceId.Split("\") -split ("&"))[2] } else { '"n/a"' } } }
+    if ($null -eq $UsbPrintersInfo)
+    {
+        $UsbPrinters = @{
+            '"Name"'='"n/a"'
+            '"VID"'='"n/a"'
+            '"PID"'='"n/a"'
+            } 
+        $UsbPrintersInfo = New-Object -TypeName PSObject -Property $UsbPrinters
+    }
+    # Get information about Operating System
     $OSInfo = Get-WmiObject Win32_OperatingSystem | Select-Object Caption, InstallDate, OSArchitecture, Version, @{Label = "NumberOfProcesses"
     Expression = { if ($_.NumberOfProcesses -gt 75) {"gt75"} else {"lt75"} } }
 # Get information about logical disks
@@ -203,6 +217,9 @@ $Basic = @"
         ],
         "PrinterInfo" : [
             $(SetJsonArray -ArrayName $PrinterInfo)
+            ],
+        "USBPrinterInfo" : [
+            $(SetJsonArray -ArrayName $UsbPrintersInfo)
         ]
     },
     "OSInfo":
