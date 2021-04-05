@@ -17,4 +17,4 @@ The script looks into the folder with the files received by the agent, compares 
 
 ### pcinfo2db
 
-Скрипт обрабатвыает итоговые json файлы, срванивает их с существующими значениями в базе, в случае появления изменений записывает json в базу.
+The script processes the resulting json files, compares them with the existing values in the database, and in case of changes, writes json to the database.
