@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo (Client-side)
-    Version: 0.15 30.03.2021
+    Version: 0.16 05.04.2021
 
      © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -128,11 +128,14 @@ function SetArraytoString {
     Expression =  {'"{0}"' -f $_.Default}}, @{Label = '"PortName"'
     Expression = {'"{0}"' -f $_.PortName.Replace("\","/")}}, @{Label = '"Status"' 
     Expression =  {'"{0}"' -f $_.Status}}
+    if ($null -eq $PrinterInfo) {
+        $PrinterInfo = '{"Printers" : "is not connected"}'
+        }
 # Get information about connected by usb printers
     $UsbPrintersInfo = Get-WmiObject Win32_USBControllerDevice | ForEach-Object {[wmi]($_.Dependent)} | Where-Object {$_.Service -match "print"} | Select-Object @{Label = '"Name"' 
     Expression = { if ($_.Name) {'"{0}"' -f $_.Name } else { '"n/a"' } } }, @{Label = '"VID"'
-    Expression = { if ($_.DeviceId) {'"{0}"' -f  ($_.DeviceId.Split("\") -split ("&"))[1] } else { '"n/a"' } } },  @{Label = '"PID"'
-    Expression = { if ($_.DeviceId) {'"{0}"' -f  ($_.DeviceId.Split("\") -split ("&"))[2] } else { '"n/a"' } } }
+    Expression = { if ($_.DeviceId) {'"{0}"' -f  ($_.DeviceId.Split("\") -split ("&") | Where-Object {$_ -match "VID"}) } else { '"n/a"' } } },  @{Label = '"PID"'
+    Expression = { if ($_.DeviceId) {'"{0}"' -f  ($_.DeviceId.Split("\") -split ("&") | Where-Object {$_ -match "PID"}) } else { '"n/a"' } } }
     if ($null -eq $UsbPrintersInfo)
     {
         $UsbPrinters = @{
@@ -142,7 +145,7 @@ function SetArraytoString {
             } 
         $UsbPrintersInfo = New-Object -TypeName PSObject -Property $UsbPrinters
     }
-    # Get information about Operating System
+# Get information about Operating System
     $OSInfo = Get-WmiObject Win32_OperatingSystem | Select-Object Caption, InstallDate, OSArchitecture, Version, @{Label = "NumberOfProcesses"
     Expression = { if ($_.NumberOfProcesses -gt 75) {"gt75"} else {"lt75"} } }
 # Get information about logical disks
@@ -152,18 +155,28 @@ function SetArraytoString {
     Expression =  {'"{0}"' -f $_.VolumeName}}, @{Label = '"FreeSpace"'
     Expression = { if ($_.FreeSpace -lt 10Gb) { '"lt10"' } else { '"gt10"' } } }
 # Get information about installed applications
-    $AppInfo = Get-WmiObject Win32_Product | Select-Object @{Label='"Name"'; Expression = { if ($_.Name) { '"{0}"' -f $_.Name.Replace('"','') } else { '"n/a"'}} }, @{Label='"Version"'
-    Expression = {'"{0}"' -f $_.Version}}
+    if ($OSInfo.OSArchitecture -match "32")
+    {
+        $AppInfo = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object {$_.displayversion -ne $null} | Sort-Object -Property displayname | Select-Object @{Label='"Name"'; Expression = { if ($_.DisplayName) { '"{0}"' -f $_.DisplayName.Replace('"','') } else { '"n/a"'}} }, @{Label='"Version"'
+        Expression = { if ($_.DisplayVersion) { '"{0}"' -f $_.DisplayVersion } else { '"n/a"'}} }
+    }
+    else {
+        $AppInfoTemp = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object {$_.displayversion -ne $null}
+        $AppInfoTemp += Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object {($_.DisplayName -notmatch "Update") -and ($_.Displayname-notmatch "Service Pack") -and ($_.DisplayName -ne $null)}
+        $AppInfo = $AppInfoTemp | Group-Object -Property displayname | ForEach-Object {$_.group | Select-Object -First 1} | Sort-Object -Property displayname | Select-Object @{Label='"Name"'; Expression = { if ($_.DisplayName) { '"{0}"' -f $_.DisplayName.Replace('"','') } else { '"n/a"'}} }, @{Label='"Version"'
+        Expression = { if ($_.DisplayVersion) { '"{0}"' -f $_.DisplayVersion } else { '"n/a"'}} }
+    }
 # Get information about Startup Commands
     $AppStartUpInfo = Get-WmiObject -Namespace ROOT\CIMV2 -Class Win32_StartupCommand | Select-Object @{Label='"Name"' 
     Expression = {'"{0}"' -f $_.Name.Replace('"','')}}, @{Label = '"Command"'
     Expression = {'"{0}"' -f $_.command.Replace( '\','/').Replace('"','')}}, @{Label = '"Location"'
     Expression = {'"{0}"' -f $_.Location.Replace('\','/')}},  @{Label = '"User"'
     Expression = {'"{0}"' -f $_.User.Replace('\',')/')}}
-# Get information about installed MS updates
-    $MSUpdateInfo = Get-WmiObject win32_quickfixengineering | Sort-Object -Property InstalledOn -Descending | Where-Object {($_.InstalledOn).Year -ge (Get-Date).Year} | Select-Object @{Label='"HotFixID"' 
-    Expression = {'"{0}"' -f $_.HotFixID}}, @{Label = '"InstalledOn"'
-    Expression = {'"{0}"' -f $_.InstalledOn}}
+<# Get information about installed MS updates. The way to get the value is taken from the article:
+    https://www.sysadmit.com/2019/03/windows-update-ver-fecha-powershell.html
+#>
+    $MSUpdateInfo = (New-Object -com "Microsoft.Update.AutoUpdate").Results | Select-Object @{Label='"LastInstallationSuccessDate"'
+    Expression = { if ($_.LastInstallationSuccessDate) {'"{0}"' -f $_.LastInstallationSuccessDate.ToShortDateString() } else {'"n/a"'}}}
 # Get information about personal user certs
     $CertInfo = Get-ChildItem -path cert:\CurrentUser\My | Where-Object {$_.Subject -match "SN"} | Select-Object @{Label = '"Expiring"'
     Expression = {'"{0}"' -f $_.NotAfter.ToShortDateString()} }, @{Label = '"Issuer"'
