@@ -1,7 +1,7 @@
 <#
     .SYNOPSIS
     PCInfo (Server-Side)
-    Version: 0.05 17.09.2020
+    Version: 0.06 27.08.2021
 
     © Anton Kosenko mail:Anton.Kosenko@gmail.com
     Licensed under the Apache License, Version 2.0
@@ -56,6 +56,8 @@ function MailError
     $JSONAnFolder = "\\path\to$\#Folder\"
     $FinalFolder = $JSONFolder + $Timestamp
     $Logfolder = $JSONFolder + "Login\"+ $Timestamp + ".csv"
+    $PRN_MODELS=Import-Csv "\\path\to\folder\prnlst.csv" -Delimiter ';'
+    $LocalPrinter=@()
     $RemovingFiles = $null
     $CntFiles = 0
     $CntFilesAll = 0
@@ -175,6 +177,38 @@ function MailError
         else {
             $CMOS = "CMOS OK"
         }
+# Get vendor and product names local installed printers
+    if ($InfoJson.GeneralHardwareInfo.USBPrinterInfo.Vid -match "n/a"){
+            $LocalPrinter = "Not connected"
+#debug        Write-Host $LocalPrinter 
+    }
+    elseif ($InfoJson.GeneralHardwareInfo.USBPrinterInfo.Vid.Count -lt 2) {
+                $PRN_MODEL = $PRN_MODELS | Where-Object {$_.Vid -eq $InfoJson.GeneralHardwareInfo.USBPrinterInfo.Vid -and 
+                                                        $_.Pid -eq $InfoJson.GeneralHardwareInfo.USBPrinterInfo.Pid}
+                if ($null -eq $PRN_MODEL) {
+                    $LocalPrinter = "Unknown Model"
+#debug                    Write-Host $LocalPrinter
+                }
+                else {
+                    $LocalPrinter = $PRN_MODEL.Vendor + ' ' + $PRN_MODEL.Model
+#$debug                    Write-Host $LocalPrinter
+                }
+        }
+    else {
+            foreach ($USBPrinter in $InfoJson.GeneralHardwareInfo.USBPrinterInfo) {
+                $PRN_MODEL = $PRN_MODELS | Where-Object {$_.Vid -eq $USBPrinter.Vid -and 
+                                            $_.Pid -eq $USBPrinter.Pid}
+                if ($null -eq $PRN_MODEL) {
+                    $LocalPrinter = "Unknown Model"
+#debug                        Write-Host $LocalPrinter
+                }
+                else {
+                    $LocalPrinter = $PRN_MODEL.Vendor + ' ' + $PRN_MODEL.Model
+#debug                        Write-Host $LocalPrinter 
+                }
+            }
+            $LocalPrinter = $LocalPrinter | Sort-Object | Get-Unique
+        }
 $Basic = @"
 {
     "ComputerName" : "$($InfoJson.ComputerName)",
@@ -202,7 +236,10 @@ $Basic = @"
     },
     "AddInfo":{
     "TotalMemory" : "$($TotalMemory / 1Gb)",
-    "ChassisType" : "$($ChassisType)"
+    "ChassisType" : "$($ChassisType)",
+    "LocalPrinters" :  [
+        $(SetArraytoString -ArrayName $($LocalPrinter))
+        ]
     }
 }
 "@
